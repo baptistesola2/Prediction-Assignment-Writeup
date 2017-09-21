@@ -1,0 +1,103 @@
+---
+title: "Prediction Assignment Writeup"
+author: "Baptiste Sola"
+date: "September 21st 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Data Processing
+
+We download and read the csv files containin the data. There are lot of "div#0" values, that we choose to treat as NAs.
+```{r, message=FALSE, warning=FALSE}
+library(caret)
+library(randomForest)
+setwd(dir = "~/coursera/Practical Machine Learning")
+trainRaw <- read.csv("pml-training.csv", na.strings = c("NA","#DIV/0!"))
+testRaw <- read.csv("pml-testing.csv", na.strings = c("NA","#DIV/0!"))
+```
+
+## cleaning NAs columns 
+
+Out of the 160 columns the dataset has, many of them are mostly NAs. These variables won't add much information, and will probably add noise and complexity to our prediction.
+
+We decide to ignore these 
+```{r}
+v <- vector()
+for (i in 1:160) {v <- append(v, sum(is.na(trainRaw[,i]))) }
+trainRawClean <- trainRaw[,v<17000]
+```
+
+## Remove non relevant variables for prediction
+
+The X variable is only a row count, and due to the dataset being ordered by the output "classe", this variable ends up being a perfect predictor for "classe". This is not a real information that would be available when using the prediction on new data, so we ignore it as well.
+
+```{r}
+minX <- aggregate(X~classe, data = trainRaw, min)
+maxX <- aggregate(X~classe, data = trainRaw, max)
+data.frame(minX,maxX)
+```
+
+We also decide to ignore the user name variable because 
+
+1. How well one performs an activity has nothing to do with its identity
+2. We want to be able to predict for other users
+
+```{r}
+trainRawClean$X <- 0
+trainRawClean$user_name <- 0
+```
+
+# Creating the Training and validation sets
+
+We divide the training csv into a training and validation set (90/10).
+
+Then we decide to use the kfold method to assess the best model. Due to computationnal restreints, we only use 4 folds or the training set.
+
+```{r}
+set.seed(3436)
+inval = createDataPartition(trainRawClean$classe, p = 0.1)[[1]]
+valset <- trainRawClean[inval,]
+trainSet <- trainRawClean[-inval,]
+folds <- createFolds(y= trainSet$classe, k=4,list = TRUE, returnTrain = TRUE)
+```
+
+
+# Choosing Models on kfolds
+
+We try out random forest models for starters. Let's train 1 for each fold
+
+```{r}
+modelRF1 <-  randomForest(classe~., trainSet[folds[[1]],])
+modelRF2 <-  randomForest(classe~., trainSet[folds[[2]],])
+modelRF3 <-  randomForest(classe~., trainSet[folds[[3]],])
+modelRF4 <-  randomForest(classe~., trainSet[folds[[4]],])
+```
+
+Let's have a look at their peformances
+```{r}
+confusionMatrix(trainSet[-folds[[1]],]$classe,predict(object = modelRF1,trainSet[-folds[[1]],]))$overall
+confusionMatrix(trainSet[-folds[[2]],]$classe,predict(object = modelRF1,trainSet[-folds[[2]],]))$overall
+confusionMatrix(trainSet[-folds[[3]],]$classe,predict(object = modelRF1,trainSet[-folds[[3]],]))$overall
+confusionMatrix(trainSet[-folds[[4]],]$classe,predict(object = modelRF1,trainSet[-folds[[4]],]))$overall
+```
+We alread reach a very good accuracy, that we probably won't be able to top, so we decide on using a random forest algorithm as our final prediction model
+
+# Train and evaluate final model
+we chose to use a random forest algorithm, so let's train it on the whole training set and test its accuracy on the validation we created earlier.
+
+```{r}
+modelRF <-  randomForest(classe~., trainSet)
+confusionMatrix(valset$classe,predict(object = modelRF,valset))$overall
+```
+
+The results are once again very good, 99.6% accuracy. 
+
+We expect similar performances for out of sample error.
+
+
+
+
